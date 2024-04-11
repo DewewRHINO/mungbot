@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 import os
 
 username = ""
-password= ""
+password = ""
 table = ""
 host = ""
 
@@ -22,6 +22,7 @@ SessionLocal = sessionmaker(bind=engine)
 
 Base = declarative_base()
 
+
 def get_food_info(food):
     # print(f"This is the parameter that was put into the function: {food}")
     db = SessionLocal()
@@ -31,13 +32,15 @@ def get_food_info(food):
         food_item = db.query(models.FoodItem).filter(
             models.FoodItem.name.ilike(f"%{food}%")).first()
         if food_item:
-            print(f"Our {food_item.name} is Fantastic! It is {food_item.description}, only costs ${food_item.price}!")
+            print(
+                f"Our {food_item.name} is Fantastic! It is {food_item.description}, only costs ${food_item.price}!")
             return f"Our {food_item.name} is Fantastic! It is {food_item.description}, only costs ${food_item.price}!"
         else:
             print("I couldn't find any information on that food item.")
             return "I couldn't find any information on that food item."
     finally:
         db.close()
+
 
 def update_food_info(food, price):
     db = SessionLocal()
@@ -59,12 +62,13 @@ def update_food_info(food, price):
     finally:
         db.close()
 
+
 def execute_sql_command(sql_command):
     """
     Executes an arbitrary SQL command on the database. For debugging.
     WARNING: Use with extreme caution. Directly executing SQL can be risky and lead to SQL injection attacks if not properly sanitized.
     This function should only be used in controlled environments or with trusted input.
-    
+
     :param sql_command: The SQL command to be executed.
     :return: The result of the execution or an error message.
     """
@@ -73,7 +77,7 @@ def execute_sql_command(sql_command):
         # Use the session's execute method for arbitrary SQL commands
         result = db.execute(sql_command)
         db.commit()  # Commit the changes to the database
-        
+
         # For SELECT queries, fetch results
         if sql_command.strip().lower().startswith("select"):
             return result.fetchall()
@@ -85,6 +89,7 @@ def execute_sql_command(sql_command):
     finally:
         db.close()
 
+
 def write_message(message):
     full_response = ""
     # Simulate stream of response with milliseconds delay
@@ -93,8 +98,9 @@ def write_message(message):
         time.sleep(0.03)
         # Add a blinking cursor to simulate typing
         message_placeholder.markdown(full_response + "▌")
-    
+
     message_placeholder.markdown(full_response)
+
 
 # Custom image for the app icon and the assistant's avatar
 company_logo = 'https://media.discordapp.net/attachments/776228323960553494/1220579653048336514/chefmarshall.png?ex=660f7462&is=65fcff62&hm=525117ff881f1853ac95eb1ba90a412fa70921f8b732f2917445bbba8adbd462&=&format=webp&quality=lossless&width=671&height=671'
@@ -108,7 +114,7 @@ st.set_page_config(
 
 # Initialize chat history if not already initialized
 if 'messages' not in st.session_state:
-    st.session_state['messages'] = [{"role": "system", 
+    st.session_state['messages'] = [{"role": "system",
                                      "content": "Hello! I Mung, I am here to answer any of your questions about the SWIFT Itallian Restauraunt."}]
 
 # Display chat messages from history on app rerun
@@ -122,24 +128,25 @@ for message in st.session_state.messages:
 
 # Chat logic
 if query := st.chat_input("Ask me anything"):
-    
+
     # Add user message to chat history
     # st.session_state.messages.append({"role": "user", "content": query})
     message = {"role": "user", "content": query}
-    
+
     # Display user message in chat message container
     with st.chat_message("user"):
         st.markdown(query)
-        
+
     # Check for specific keywords in the query
     sensitive_keywords = ["admin", "phone number", "password", "minh"]
     if any(keyword in query.lower() for keyword in sensitive_keywords):
         # Display the GIF without sending the query to the chain
         with st.chat_message("assistant", avatar=company_logo):
             st.image(gif_url, caption="Oops, let's not talk about that here!")
-            
+
         # Add a generic assistant message to chat history to maintain flow
-        st.session_state.messages.append({"role": "assistant", "content": "Oops, let's not talk about that here!"})
+        st.session_state.messages.append(
+            {"role": "assistant", "content": "Oops, let's not talk about that here!"})
     else:
         # Process query normally if no sensitive keywords are found
         with st.chat_message("assistant", avatar=company_logo):
@@ -147,7 +154,8 @@ if query := st.chat_input("Ask me anything"):
             # Send user's question to our chain
             # result = st.session_state['chain']({"question": query})
             # response = result['answer']
-            st.session_state.messages.append({"role": "user", "content": query})
+            st.session_state.messages.append(
+                {"role": "user", "content": query})
             messages = [{"role": "user", "content": query}]
 
         # OpenAI call to process the input
@@ -197,7 +205,7 @@ if query := st.chat_input("Ask me anything"):
                     "type": "function",
                     "function": {
                         "name": "execute_sql_command",
-                        "description": "Execute a command for a food item from Marshall's Spaghetti Factory",
+                        "description": "Execute an SQL command on Marshall's Spaghetti Factory Database",
                         "parameters": {
                             "type": "object",
                             "properties": {
@@ -228,31 +236,56 @@ if query := st.chat_input("Ask me anything"):
             "execute_sql_command": execute_sql_command
         }
 
-        for tool_call in tool_calls:
-            function_name = tool_call.function.name
-            function_to_call = available_functions[function_name]
+        # This is the response from the OpenAI call
+response_message = response.choices[0].message
+tool_calls = response_message.tool_calls
+
+# Define the available functions for tool calls
+available_functions = {
+    "get_food_info": get_food_info,
+    "update_food_info": update_food_info,
+    "execute_sql_command": execute_sql_command
+}
+
+if not tool_calls:
+    # If there are no tool calls, just write the AI's response to the chat
+    write_message(response_message.content)
+else:
+    # If there are tool calls, process each one
+    for tool_call in tool_calls:
+        function_name = tool_call.function.name
+        function_to_call = available_functions.get(function_name)
+
+        if function_to_call:
+            # Deserialize the function arguments from JSON
             function_args = json.loads(tool_call.function.arguments)
-            # Here is where we set the function response, we have to pull the parameteres here as well.
-            if function_name == "get_food_info": 
+
+            # Call the appropriate function based on the tool call name
+            # Passing arguments differently based on the function
+            if function_name in ["get_food_info", "update_food_info"]:
                 function_response = function_to_call(
                     food=function_args.get("food_item"),
+                    # price is optional for get_food_info
+                    price=function_args.get("price", None)
                 )
-                write_message(function_response)
-            else: 
+            elif function_name == "execute_sql_command":
+                # Assuming execute_sql_command expects a single string argument
                 function_response = function_to_call(
-                food=function_args.get("food_item"),
-                price=function_args.get("price")
+                    sql_command=function_args.get("sql_command")
                 )
-                write_message(function_response)
+            else:
+                function_response = "Function not found."
 
-            st.session_state.messages.append(
-                {
-                    "tool_call_id": tool_call.id,
-                    "role": "tool",
-                    "name": function_name,
-                    "content": function_response,
-                }
-            ) 
-            
+            # Write the response from the function call to the chat
+            write_message(function_response)
+
+            # Add the function response to session state messages
+            st.session_state.messages.append({
+                "tool_call_id": tool_call.id,
+                "role": "tool",
+                "name": function_name,
+                "content": function_response,
+            })
+
             # Add assistant message to chat history
             # st.session_state.messages.append({"role": "assistant", "content": response})
