@@ -5,6 +5,22 @@ from database import SessionLocal
 import models
 import json
 import time
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import os
+
+username = ""
+password= ""
+table = ""
+host = ""
+
+DATABASE_URL = f"mysql+pymysql://{username}:{password}@{host}/{table}"
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+
+Base = declarative_base()
 
 def get_food_info(food):
     # print(f"This is the parameter that was put into the function: {food}")
@@ -22,7 +38,6 @@ def get_food_info(food):
             return "I couldn't find any information on that food item."
     finally:
         db.close()
-
 
 def update_food_info(food, price):
     db = SessionLocal()
@@ -43,7 +58,33 @@ def update_food_info(food, price):
         return f"An error occurred: {str(e)}"
     finally:
         db.close()
+
+def execute_sql_command(sql_command):
+    """
+    Executes an arbitrary SQL command on the database. For debugging.
+    WARNING: Use with extreme caution. Directly executing SQL can be risky and lead to SQL injection attacks if not properly sanitized.
+    This function should only be used in controlled environments or with trusted input.
+    
+    :param sql_command: The SQL command to be executed.
+    :return: The result of the execution or an error message.
+    """
+    db = SessionLocal()
+    try:
+        # Use the session's execute method for arbitrary SQL commands
+        result = db.execute(sql_command)
+        db.commit()  # Commit the changes to the database
         
+        # For SELECT queries, fetch results
+        if sql_command.strip().lower().startswith("select"):
+            return result.fetchall()
+        else:
+            return "Command executed successfully."
+    except Exception as e:
+        db.rollback()  # Rollback in case of error
+        return f"An error occurred: {str(e)}"
+    finally:
+        db.close()
+
 def write_message(message):
     full_response = ""
     # Simulate stream of response with milliseconds delay
@@ -151,6 +192,23 @@ if query := st.chat_input("Ask me anything"):
                             "required": ["food_item"],
                         },
                     }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "execute_sql_command",
+                        "description": "Execute a command for a food item from Marshall's Spaghetti Factory",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "sql_command": {
+                                    "type": "string",
+                                    "description": "SQL Command that they want to run.",
+                                }
+                            },
+                            "required": ["sql_command"],
+                        },
+                    }
                 }
             ],
             tool_choice="auto",
@@ -166,7 +224,8 @@ if query := st.chat_input("Ask me anything"):
         # Example tool usage detection, replace with actual logic based on AI response
         available_functions = {
             "get_food_info": get_food_info,
-            "update_food_info": update_food_info
+            "update_food_info": update_food_info,
+            "execute_sql_command": execute_sql_command
         }
 
         for tool_call in tool_calls:
